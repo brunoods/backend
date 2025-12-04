@@ -14,6 +14,7 @@ const statsRoutes = require('./routes/statsRoutes');
 const milestonesRoutes = require('./routes/milestonesRoutes');
 const savingsRoutes = require('./routes/savingsRoutes');
 const loansRoutes = require('./routes/loansRoutes');
+const subscriptionRoutes = require('./routes/subscriptionRoutes');
 
 dotenv.config();
 
@@ -43,6 +44,7 @@ app.use('/stats', statsRoutes);       // Estatísticas
 app.use('/milestones', milestonesRoutes); // Conquistas e Marcos
 app.use('/savings', savingsRoutes);   // Cofres e Metas de Poupança
 app.use('/loans', loansRoutes);       // Empréstimos e Gestão Financeira
+app.use('/subscribe', subscriptionRoutes); // Assinaturas PRO
 
 app.listen(PORT, () => {
     console.log(`🚀 Servidor rodando na porta ${PORT}`);
