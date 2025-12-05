@@ -2,8 +2,8 @@ const db = require('../config/db');
 
 // Catálogo Hardcoded para validação de preço
 const PET_CATALOG = {
-    'dog': { price: 200, name: 'Cachorrinho' },
-    'cat': { price: 200, name: 'Gatinho' },
+    'dog': { price: 250, name: 'Cachorrinho' }, // Era 200
+    'cat': { price: 250, name: 'Gatinho' },     // Era 200
     'hamster': { price: 150, name: 'Hamster' },
     'lion': { price: 500, name: 'Leão' },
     'robot': { price: 300, name: 'Robô-Pet' },
