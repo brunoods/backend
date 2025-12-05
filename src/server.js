@@ -46,7 +46,7 @@ app.use('/milestones', milestonesRoutes); // Conquistas e Marcos
 app.use('/savings', savingsRoutes);   // Cofres e Metas de Poupança
 app.use('/loans', loansRoutes);       // Empréstimos e Gestão Financeira
 app.use('/subscribe', subscriptionRoutes); // Assinaturas PRO
-app.use('/pets', petRoutes);         // Pets Virtuais
+app.use('/pets', petsRoutes);         // Pets Virtuais
 
 app.listen(PORT, () => {
     console.log(`🚀 Servidor rodando na porta ${PORT}`);
