@@ -1,39 +1,23 @@
-const db = require('../config/db');
+const rewardsService = require('../services/rewardsService');
 const asyncHandler = require('../utils/asyncHandler');
 
-// Criar recompensa
 exports.criarRecompensa = asyncHandler(async (req, res) => {
-    const parentId = req.user.id;
     const { nome, custo, icone } = req.body;
-
     if (!nome || !custo) {
         const error = new Error('Nome e custo são obrigatórios.');
         error.statusCode = 400;
         throw error;
     }
-
-    const [resultado] = await db.execute(
-        'INSERT INTO rewards (parent_id, nome, custo, icone) VALUES (?, ?, ?, ?)',
-        [parentId, nome, custo, icone || '🎁']
-    );
-
-    res.status(201).json({ mensagem: 'Recompensa criada!', id: resultado.insertId });
+    const id = await rewardsService.create({ parentId: req.user.id, nome, custo, icone });
+    res.status(201).json({ mensagem: 'Recompensa criada!', id });
 });
 
-// Listar recompensas
 exports.listarRecompensas = asyncHandler(async (req, res) => {
-    const parentId = req.user.id;
-    const [recompensas] = await db.execute(
-        'SELECT * FROM rewards WHERE parent_id = ? ORDER BY custo ASC',
-        [parentId]
-    );
+    const recompensas = await rewardsService.list(req.user.id);
     res.json(recompensas);
 });
 
-// Deletar recompensa
 exports.deletarRecompensa = asyncHandler(async (req, res) => {
-    const parentId = req.user.id;
-    const { id } = req.params;
-    await db.execute('DELETE FROM rewards WHERE id = ? AND parent_id = ?', [id, parentId]);
+    await rewardsService.delete(req.params.id, req.user.id);
     res.json({ mensagem: 'Recompensa removida.' });
 });
