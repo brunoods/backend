@@ -1,5 +1,5 @@
 const db = require('../config/db');
-// const { google } = require('googleapis'); // Usar quando tiver a chave real
+const { google } = require('googleapis'); // Usar quando tiver a chave real
 
 exports.verifyPurchase = async (req, res) => {
     const connection = await db.getConnection();
@@ -17,7 +17,7 @@ exports.verifyPurchase = async (req, res) => {
         // 3. Se retornar status válido, prosseguir.
 
         // --- SIMULAÇÃO PARA TESTE (REMOVE ISTO EM PRODUÇÃO) ---
-        const isValid = true; 
+        const isValid = false; 
         
         if (isValid) {
             // Define validade (ex: 30 dias)
