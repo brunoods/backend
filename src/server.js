@@ -15,7 +15,7 @@ const milestonesRoutes = require('./routes/milestonesRoutes');
 const savingsRoutes = require('./routes/savingsRoutes');
 const loansRoutes = require('./routes/loansRoutes');
 const subscriptionRoutes = require('./routes/subscriptionRoutes');
-const petRoutes = require('./routes/petsRoutes');
+const petsRoutes = require('./routes/petsRoutes');
 
 dotenv.config();
 
