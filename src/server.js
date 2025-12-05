@@ -6,6 +6,7 @@ const compression = require('compression'); // Performance
 const rateLimit = require('express-rate-limit'); // Proteção contra DDoS/Brute-force
 const db = require('./config/db');
 const errorMiddleware = require('./middleware/errorMiddleware');
+const morgan = require('morgan');
 
 // Importação das rotas
 const authRoutes = require('./routes/authRoutes');
@@ -52,8 +53,16 @@ const loginLimiter = rateLimit({
 });
 app.use('/auth/login', loginLimiter);
 
+// 5. Logger de Requisições HTTP (Desenvolvimento)
+app.use(morgan('dev'));
+
 // --- MIDDLEWARES PADRÃO ---
-app.use(cors());
+// Em vez de app.use(cors());
+app.use(cors({
+    origin: '*', // Em produção, troca '*' pelo domínio do teu site se tiveres
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+}));
 app.use(express.json());
 
 // Rota de teste (Health Check)
