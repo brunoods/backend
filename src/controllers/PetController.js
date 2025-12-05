@@ -5,7 +5,7 @@ const PET_CATALOG = {
     'dog': { price: 200, name: 'Cachorrinho' },
     'cat': { price: 200, name: 'Gatinho' },
     'hamster': { price: 150, name: 'Hamster' },
-    'dragon': { price: 500, name: 'Dragão Místico' },
+    'lion': { price: 500, name: 'Leão' },
     'robot': { price: 300, name: 'Robô-Pet' },
     'dino': { price: 400, name: 'Dinossauro' }
 };
