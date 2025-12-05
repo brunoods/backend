@@ -2,19 +2,22 @@ const db = require('../config/db');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const asyncHandler = require('../utils/asyncHandler');
+const { 
+    registerSchema, 
+    loginSchema, 
+    linkRequestSchema, 
+    linkResponseSchema, 
+    updateProfileSchema, 
+    changePasswordSchema 
+} = require('../schemas/authSchema');
 
 // 1. Registrar Pai/Mãe
 exports.registrarPai = asyncHandler(async (req, res) => {
-    const { nome, email, senha } = req.body;
-
-    if (!nome || !email || !senha) {
-        const error = new Error('Por favor, preencha todos os campos: nome, email e senha.');
-        error.statusCode = 400;
-        throw error;
-    }
+    // Validação Automática (Zod)
+    const { nome, email, senha } = registerSchema.parse(req.body);
 
     const [usuariosExistentes] = await db.execute(
-        'SELECT * FROM users WHERE email = ?', 
+        'SELECT id FROM users WHERE email = ?', 
         [email]
     );
 
@@ -40,7 +43,7 @@ exports.registrarPai = asyncHandler(async (req, res) => {
 
 // 2. Login
 exports.login = asyncHandler(async (req, res) => {
-    const { email, senha } = req.body;
+    const { email, senha } = loginSchema.parse(req.body);
 
     const [usuarios] = await db.execute(
         'SELECT * FROM users WHERE email = ?',
@@ -62,6 +65,7 @@ exports.login = asyncHandler(async (req, res) => {
         throw error;
     }
 
+    // LÓGICA DO VÍNCULO: Se tiver admin_id, usa ele (modo família). Se não, usa o próprio ID.
     const effectiveId = usuario.admin_id ? usuario.admin_id : usuario.id;
 
     const token = jwt.sign(
@@ -76,7 +80,9 @@ exports.login = asyncHandler(async (req, res) => {
         usuario: {
             id: effectiveId,
             nome: usuario.nome,
-            email: usuario.email
+            email: usuario.email,
+            // Retorna flag para o frontend saber se é PRO ou membro de família
+            is_pro: !!usuario.is_pro || !!usuario.admin_id 
         }
     });
 });
@@ -84,8 +90,11 @@ exports.login = asyncHandler(async (req, res) => {
 // 3. Solicitar Vínculo
 exports.solicitarVinculo = asyncHandler(async (req, res) => {
     const meuIdReal = req.user.real_id || req.user.id;
-    const { emailAdmin } = req.body;
+    
+    // Validação
+    const { emailAdmin } = linkRequestSchema.parse(req.body);
 
+    // Achar o pai pelo email
     const [admins] = await db.execute('SELECT id, nome FROM users WHERE email = ?', [emailAdmin]);
     
     if (admins.length === 0) {
@@ -102,8 +111,9 @@ exports.solicitarVinculo = asyncHandler(async (req, res) => {
         throw error;
     }
 
+    // Verificar se já existe pedido pendente
     const [pedidos] = await db.execute(
-        'SELECT * FROM family_requests WHERE requester_id = ? AND admin_id = ?',
+        'SELECT id FROM family_requests WHERE requester_id = ? AND admin_id = ?',
         [meuIdReal, adminId]
     );
 
@@ -113,6 +123,7 @@ exports.solicitarVinculo = asyncHandler(async (req, res) => {
         throw error;
     }
 
+    // Criar o pedido
     await db.execute(
         'INSERT INTO family_requests (requester_id, admin_id) VALUES (?, ?)',
         [meuIdReal, adminId]
@@ -121,7 +132,7 @@ exports.solicitarVinculo = asyncHandler(async (req, res) => {
     res.json({ mensagem: `Solicitação enviada para ${admins[0].nome}. Aguarde a aprovação.` });
 });
 
-// 4. Listar Solicitações
+// 4. Listar Solicitações Pendentes
 exports.listarSolicitacoes = asyncHandler(async (req, res) => {
     const meuId = req.user.id; 
 
@@ -135,15 +146,18 @@ exports.listarSolicitacoes = asyncHandler(async (req, res) => {
     res.json(solicitacoes);
 });
 
-// 5. Responder Solicitação
+// 5. Responder Solicitação (Aprovar/Rejeitar)
 exports.responderVinculo = asyncHandler(async (req, res) => {
     const meuId = req.user.id;
-    const { requestId, acao } = req.body;
+    
+    // Validação
+    const { requestId, acao } = linkResponseSchema.parse(req.body);
 
+    // Buscar o pedido para garantir que pertence a este admin
     const [pedidos] = await db.execute('SELECT * FROM family_requests WHERE id = ? AND admin_id = ?', [requestId, meuId]);
     
     if (pedidos.length === 0) {
-        const error = new Error('Solicitação não encontrada.');
+        const error = new Error('Solicitação não encontrada ou não autorizada.');
         error.statusCode = 404;
         throw error;
     }
@@ -151,25 +165,24 @@ exports.responderVinculo = asyncHandler(async (req, res) => {
     const pedido = pedidos[0];
 
     if (acao === 'aprovar') {
+        // Efetiva o vínculo: O solicitante passa a ter o admin_id = meuId
         await db.execute('UPDATE users SET admin_id = ? WHERE id = ?', [meuId, pedido.requester_id]);
     }
 
+    // Remove o pedido da tabela (limpeza)
     await db.execute('DELETE FROM family_requests WHERE id = ?', [requestId]);
 
     res.json({ mensagem: acao === 'aprovar' ? 'Vínculo aprovado com sucesso!' : 'Solicitação rejeitada.' });
 });
 
-// 6. Editar Perfil
+// 6. Editar Perfil (Nome e Email)
 exports.editarPerfil = asyncHandler(async (req, res) => {
+    // Garante que altera o usuário logado, não o admin vinculado
     const userId = req.user.real_id || req.user.id;
-    const { nome, email } = req.body;
+    
+    const { nome, email } = updateProfileSchema.parse(req.body);
 
-    if (!nome || !email) {
-        const error = new Error('Nome e email são obrigatórios.');
-        error.statusCode = 400;
-        throw error;
-    }
-
+    // Verifica se o email já está sendo usado por OUTRA pessoa
     const [users] = await db.execute(
         'SELECT id FROM users WHERE email = ? AND id != ?',
         [email, userId]
@@ -192,14 +205,10 @@ exports.editarPerfil = asyncHandler(async (req, res) => {
 // 7. Alterar Senha
 exports.alterarSenha = asyncHandler(async (req, res) => {
     const userId = req.user.real_id || req.user.id;
-    const { senhaAtual, novaSenha } = req.body;
+    
+    const { senhaAtual, novaSenha } = changePasswordSchema.parse(req.body);
 
-    if (!senhaAtual || !novaSenha) {
-        const error = new Error('Preencha as senhas.');
-        error.statusCode = 400;
-        throw error;
-    }
-
+    // Busca a senha atual para conferir
     const [users] = await db.execute('SELECT senha_hash FROM users WHERE id = ?', [userId]);
     const user = users[0];
 
@@ -210,6 +219,7 @@ exports.alterarSenha = asyncHandler(async (req, res) => {
         throw error;
     }
 
+    // Criptografa a nova senha
     const salt = await bcrypt.genSalt(10);
     const novaHash = await bcrypt.hash(novaSenha, salt);
 
