@@ -1,49 +1,44 @@
 const db = require('../config/db');
+const asyncHandler = require('../utils/asyncHandler');
 
-// Listar dívidas pendentes
-exports.getLoans = async (req, res) => {
-    try {
-        const { childId } = req.params;
-        const [loans] = await db.execute(
-            "SELECT * FROM loans WHERE child_id = ? AND status = 'pendente' ORDER BY created_at DESC", 
-            [childId]
-        );
-        res.json(loans);
-    } catch (error) {
-        res.status(500).json({ mensagem: 'Erro ao buscar dívidas.' });
+// Listar dívidas
+exports.getLoans = asyncHandler(async (req, res) => {
+    const { childId } = req.params;
+    const [loans] = await db.execute(
+        "SELECT * FROM loans WHERE child_id = ? AND status = 'pendente' ORDER BY created_at DESC", 
+        [childId]
+    );
+    res.json(loans);
+});
+
+// Criar dívida
+exports.createLoan = asyncHandler(async (req, res) => {
+    const { childId, descricao, valor } = req.body;
+    if (!descricao || !valor) {
+        const error = new Error('Dados incompletos.');
+        error.statusCode = 400;
+        throw error;
     }
-};
 
-// Criar nova dívida (Adiantamento)
-exports.createLoan = async (req, res) => {
-    try {
-        const { childId, descricao, valor } = req.body;
-        if (!descricao || !valor) return res.status(400).json({ mensagem: 'Dados incompletos.' });
+    await db.execute(
+        'INSERT INTO loans (child_id, descricao, valor_total) VALUES (?, ?, ?)',
+        [childId, descricao, valor]
+    );
+    res.status(201).json({ mensagem: 'Dívida registrada!' });
+});
 
-        await db.execute(
-            'INSERT INTO loans (child_id, descricao, valor_total) VALUES (?, ?, ?)',
-            [childId, descricao, valor]
-        );
-        res.status(201).json({ mensagem: 'Dívida registrada!' });
-    } catch (error) {
-        res.status(500).json({ mensagem: 'Erro ao criar dívida.' });
-    }
-};
-
-// Abater Dívida (Pagar com saldo)
-exports.payLoan = async (req, res) => {
+// Pagar dívida (Transação)
+exports.payLoan = asyncHandler(async (req, res) => {
     const connection = await db.getConnection();
     try {
         await connection.beginTransaction();
         const { id } = req.params;
-        const { valorPagamento } = req.body; // Quanto vai pagar agora
+        const { valorPagamento } = req.body;
 
-        // 1. Busca a dívida
         const [loans] = await connection.execute('SELECT * FROM loans WHERE id = ?', [id]);
         if (loans.length === 0) throw new Error('Dívida não encontrada.');
         const loan = loans[0];
 
-        // 2. Verifica saldo da criança
         const [children] = await connection.execute('SELECT pontos FROM children WHERE id = ?', [loan.child_id]);
         const saldoAtual = children[0].pontos;
 
@@ -51,19 +46,16 @@ exports.payLoan = async (req, res) => {
             throw new Error(`Saldo insuficiente. A criança só tem ${saldoAtual} pontos.`);
         }
 
-        // 3. Verifica se o pagamento não excede a dívida
         const faltaPagar = loan.valor_total - loan.valor_pago;
         if (valorPagamento > faltaPagar) {
             throw new Error(`O valor excede a dívida. Restam apenas ${faltaPagar} para pagar.`);
         }
 
-        // 4. Desconta do saldo da criança
         await connection.execute(
             'UPDATE children SET pontos = pontos - ? WHERE id = ?', 
             [valorPagamento, loan.child_id]
         );
 
-        // 5. Atualiza a dívida
         const novoValorPago = loan.valor_pago + valorPagamento;
         const novoStatus = novoValorPago >= loan.valor_total ? 'pago' : 'pendente';
 
@@ -72,7 +64,6 @@ exports.payLoan = async (req, res) => {
             [novoValorPago, novoStatus, id]
         );
 
-        // 6. Regista no Extrato
         await connection.execute(
             'INSERT INTO points_history (child_id, pontos, tipo, motivo) VALUES (?, ?, ?, ?)',
             [loan.child_id, -valorPagamento, 'perda', `Pagamento de Dívida: ${loan.descricao}`]
@@ -83,19 +74,16 @@ exports.payLoan = async (req, res) => {
 
     } catch (error) {
         await connection.rollback();
-        res.status(400).json({ mensagem: error.message || 'Erro ao pagar dívida.' });
+        error.statusCode = 400;
+        throw error;
     } finally {
         connection.release();
     }
-};
+});
 
-// Deletar Dívida (Perdoar)
-exports.deleteLoan = async (req, res) => {
-    try {
-        const { id } = req.params;
-        await db.execute('DELETE FROM loans WHERE id = ?', [id]);
-        res.json({ mensagem: 'Dívida removida (perdoada).' });
-    } catch (error) {
-        res.status(500).json({ mensagem: 'Erro ao remover dívida.' });
-    }
-};
+// Deletar dívida
+exports.deleteLoan = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    await db.execute('DELETE FROM loans WHERE id = ?', [id]);
+    res.json({ mensagem: 'Dívida removida (perdoada).' });
+});

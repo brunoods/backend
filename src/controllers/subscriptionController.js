@@ -1,26 +1,21 @@
 const db = require('../config/db');
-const { google } = require('googleapis'); // Usar quando tiver a chave real
+const { google } = require('googleapis'); 
+const asyncHandler = require('../utils/asyncHandler');
 
-exports.verifyPurchase = async (req, res) => {
+exports.verifyPurchase = asyncHandler(async (req, res) => {
     const connection = await db.getConnection();
     try {
         await connection.beginTransaction();
         
-        const userId = req.user.id; // ID do pai logado
+        const userId = req.user.id;
         const { purchaseToken, productId, platform } = req.body;
 
         console.log('Verificando compra:', productId);
 
-        // --- VALIDAÇÃO REAL COM GOOGLE (Para quando tiveres a chave) ---
-        // 1. Autenticar com googleapis usando seu service-account.json
-        // 2. Chamar androidPublisher.purchases.subscriptions.get(...)
-        // 3. Se retornar status válido, prosseguir.
-
-        // --- SIMULAÇÃO PARA TESTE (REMOVE ISTO EM PRODUÇÃO) ---
+        // --- SIMULAÇÃO PARA TESTE ---
         const isValid = false; 
         
         if (isValid) {
-            // Define validade (ex: 30 dias)
             const validade = new Date();
             validade.setDate(validade.getDate() + 30);
 
@@ -37,9 +32,9 @@ exports.verifyPurchase = async (req, res) => {
 
     } catch (error) {
         await connection.rollback();
-        console.error(error);
-        res.status(400).json({ success: false, message: 'Falha na verificação.' });
+        error.statusCode = 400;
+        throw error;
     } finally {
         connection.release();
     }
-};
+});

@@ -1,34 +1,29 @@
 const db = require('../config/db');
+const asyncHandler = require('../utils/asyncHandler');
 
-// Listar todos os filhos do pai logado
-exports.listarFilhos = async (req, res) => {
-    try {
-        const parentId = req.user.id;
-        const [filhos] = await db.execute(
-            'SELECT * FROM children WHERE parent_id = ?',
-            [parentId]
-        );
-        res.json(filhos);
-    } catch (error) {
-        res.status(500).json({ mensagem: 'Erro ao buscar filhos.' });
-    }
-};
+// Listar filhos
+exports.listarFilhos = asyncHandler(async (req, res) => {
+    const parentId = req.user.id;
+    const [filhos] = await db.execute(
+        'SELECT * FROM children WHERE parent_id = ?',
+        [parentId]
+    );
+    res.json(filhos);
+});
 
-// Criar um novo filho (COM COR DE FUNDO)
-exports.criarFilho = async (req, res) => {
+// Criar filho (Transação)
+exports.criarFilho = asyncHandler(async (req, res) => {
     const connection = await db.getConnection();
     try {
         await connection.beginTransaction();
 
         const parentId = req.user.id;
-        // Recebe corFundo agora
         const { nome, avatar, dataNascimento, corFundo } = req.body;
 
         if (!nome) {
-            return res.status(400).json({ mensagem: 'O nome da criança é obrigatório.' });
+            throw new Error('O nome da criança é obrigatório.');
         }
 
-        // 1. Cria a criança
         const [resultado] = await connection.execute(
             'INSERT INTO children (parent_id, nome, avatar, pontos, data_nascimento, cor_fundo) VALUES (?, ?, ?, 0, ?, ?)',
             [parentId, nome, avatar || 'default.png', dataNascimento || null, corFundo || '#F0F0F0']
@@ -37,7 +32,6 @@ exports.criarFilho = async (req, res) => {
         const childId = resultado.insertId;
         let pontosIniciais = 0;
 
-        // 2. Conquista "Nasceu"
         if (dataNascimento) {
             const [milestone] = await connection.execute(
                 "SELECT id, xp_reward FROM milestones WHERE titulo LIKE 'Cheguei ao Mundo%' LIMIT 1"
@@ -71,55 +65,54 @@ exports.criarFilho = async (req, res) => {
 
     } catch (error) {
         await connection.rollback();
-        console.error(error);
-        res.status(500).json({ mensagem: 'Erro ao cadastrar filho.' });
+        error.statusCode = 400; // Define erro como bad request se falhar validação
+        throw error;
     } finally {
         connection.release();
     }
-};
+});
 
-// Editar filho (COM COR DE FUNDO)
-exports.editarFilho = async (req, res) => {
-    try {
-        const parentId = req.user.id;
-        const { id } = req.params;
-        const { nome, avatar, dataNascimento, corFundo } = req.body;
+// Editar filho
+exports.editarFilho = asyncHandler(async (req, res) => {
+    const parentId = req.user.id;
+    const { id } = req.params;
+    const { nome, avatar, dataNascimento, corFundo } = req.body;
 
-        if (!nome) return res.status(400).json({ mensagem: 'Nome é obrigatório.' });
-
-        const [result] = await db.execute(
-            'UPDATE children SET nome = ?, avatar = ?, data_nascimento = ?, cor_fundo = ? WHERE id = ? AND parent_id = ?',
-            [nome, avatar, dataNascimento || null, corFundo || '#F0F0F0', id, parentId]
-        );
-
-        if (result.affectedRows === 0) {
-            return res.status(404).json({ mensagem: 'Criança não encontrada ou não autorizada.' });
-        }
-
-        res.json({ mensagem: 'Dados atualizados com sucesso.' });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ mensagem: 'Erro ao atualizar filho.' });
+    if (!nome) {
+        const error = new Error('Nome é obrigatório.');
+        error.statusCode = 400;
+        throw error;
     }
-};
+
+    const [result] = await db.execute(
+        'UPDATE children SET nome = ?, avatar = ?, data_nascimento = ?, cor_fundo = ? WHERE id = ? AND parent_id = ?',
+        [nome, avatar, dataNascimento || null, corFundo || '#F0F0F0', id, parentId]
+    );
+
+    if (result.affectedRows === 0) {
+        const error = new Error('Criança não encontrada ou não autorizada.');
+        error.statusCode = 404;
+        throw error;
+    }
+
+    res.json({ mensagem: 'Dados atualizados com sucesso.' });
+});
 
 // Deletar filho
-exports.deletarFilho = async (req, res) => {
-    try {
-        const parentId = req.user.id;
-        const { id } = req.params;
+exports.deletarFilho = asyncHandler(async (req, res) => {
+    const parentId = req.user.id;
+    const { id } = req.params;
 
-        const [resultado] = await db.execute(
-            'DELETE FROM children WHERE id = ? AND parent_id = ?',
-            [id, parentId]
-        );
+    const [resultado] = await db.execute(
+        'DELETE FROM children WHERE id = ? AND parent_id = ?',
+        [id, parentId]
+    );
 
-        if (resultado.affectedRows === 0) {
-            return res.status(404).json({ mensagem: 'Criança não encontrada.' });
-        }
-
-        res.json({ mensagem: 'Criança removida com sucesso.' });
-    } catch (error) {
-        res.status(500).json({ mensagem: 'Erro ao remover filho.' });
+    if (resultado.affectedRows === 0) {
+        const error = new Error('Criança não encontrada.');
+        error.statusCode = 404;
+        throw error;
     }
-};
+
+    res.json({ mensagem: 'Criança removida com sucesso.' });
+});

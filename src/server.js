@@ -1,7 +1,10 @@
 const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
+const helmet = require('helmet'); // <--- NOVO (Segurança)
+const compression = require('compression'); // <--- NOVO (Performance)
 const db = require('./config/db');
+const errorMiddleware = require('./middleware/errorMiddleware'); // <--- NOVO
 
 // Importação das rotas
 const authRoutes = require('./routes/authRoutes');
@@ -22,34 +25,39 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// --- MIDDLEWARES GLOBAIS ---
+app.use(helmet()); // Adiciona headers de segurança HTTP
+app.use(compression()); // Comprime as respostas JSON (mais rápido no 4G)
 app.use(cors());
 app.use(express.json());
 
 // Rota de teste
 app.get('/', (req, res) => {
     res.json({
-        mensagem: 'API do Sistema de Mesada está online!',
+        mensagem: 'API do Sistema de Mesada está online! 🚀',
         status: 200,
-        data_hora: new Date()
+        uptime: process.uptime()
     });
 });
 
-// Definição das Rotas da API
-app.use('/auth', authRoutes);         // Login e Registro
-app.use('/children', childrenRoutes); // Gerenciar Filhos
-app.use('/tasks', tasksRoutes);       // Gerenciar Tarefas
-app.use('/ops', operationsRoutes);    // Pontuar, Punir e Extrato
-app.use('/rewards', rewardsRoutes);   // Recompensas da Loja
-app.use('/settings', settingsRoutes); // Configurações Gerais
-app.use('/stats', statsRoutes);       // Estatísticas
-app.use('/milestones', milestonesRoutes); // Conquistas e Marcos
-app.use('/savings', savingsRoutes);   // Cofres e Metas de Poupança
-app.use('/loans', loansRoutes);       // Empréstimos e Gestão Financeira
-app.use('/subscribe', subscriptionRoutes); // Assinaturas PRO
-app.use('/pets', petsRoutes);         // Pets Virtuais
+// --- ROTAS ---
+app.use('/auth', authRoutes);
+app.use('/children', childrenRoutes);
+app.use('/tasks', tasksRoutes);
+app.use('/ops', operationsRoutes);
+app.use('/rewards', rewardsRoutes);
+app.use('/settings', settingsRoutes);
+app.use('/stats', statsRoutes);
+app.use('/milestones', milestonesRoutes);
+app.use('/savings', savingsRoutes);
+app.use('/loans', loansRoutes);
+app.use('/subscribe', subscriptionRoutes);
+app.use('/pets', petsRoutes);
+
+// --- TRATAMENTO DE ERRO CENTRALIZADO ---
+// Deve ser o último app.use()
+app.use(errorMiddleware);
 
 app.listen(PORT, () => {
-    console.log(`🚀 Servidor rodando na porta ${PORT}`);
-    console.log(`📡 Acesso local: http://localhost:${PORT}`);
-    console.log(`🛠️ Rotas de operações disponíveis em /ops`);
+    console.log(`🚀 Servidor otimizado rodando na porta ${PORT}`);
 });
