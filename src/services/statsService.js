@@ -57,3 +57,63 @@ exports.getRankings = async (parentId) => {
 
     return { geral, semanal };
 };
+
+// --- NOVA FUNÇÃO: RESUMO MENSAL (Stories) ---
+exports.getMonthlyRecap = async (childId, month, year) => {
+    // Se não informar mês/ano, usa o atual
+    const date = new Date();
+    const m = month || (date.getMonth() + 1);
+    const y = year || date.getFullYear();
+
+    // 1. Totais Financeiros (Ganho vs Gasto no mês)
+    const [totals] = await db.execute(`
+        SELECT
+            SUM(CASE WHEN tipo = 'ganho' THEN pontos ELSE 0 END) as total_ganho,
+            SUM(CASE WHEN tipo = 'perda' THEN ABS(pontos) ELSE 0 END) as total_gasto
+        FROM points_history
+        WHERE child_id = ?
+        AND MONTH(created_at) = ? AND YEAR(created_at) = ?
+    `, [childId, m, y]);
+
+    // 2. Tarefa Destaque (A que mais fez)
+    const [topTask] = await db.execute(`
+        SELECT t.nome, COUNT(*) as qtd
+        FROM assigned_tasks at
+        JOIN tasks t ON at.task_id = t.id
+        WHERE at.child_id = ?
+        AND MONTH(at.data) = ? AND YEAR(at.data) = ?
+        AND at.status = 'aprovado'
+        GROUP BY t.nome
+        ORDER BY qtd DESC
+        LIMIT 1
+    `, [childId, m, y]);
+
+    // 3. Maior Gasto (Onde o dinheiro foi?)
+    const [topExpense] = await db.execute(`
+        SELECT motivo, SUM(ABS(pontos)) as total
+        FROM points_history
+        WHERE child_id = ?
+        AND tipo = 'perda'
+        AND MONTH(created_at) = ? AND YEAR(created_at) = ?
+        GROUP BY motivo
+        ORDER BY total DESC
+        LIMIT 1
+    `, [childId, m, y]);
+
+    // 4. Contagem total de tarefas
+    const [taskCount] = await db.execute(`
+        SELECT COUNT(*) as total
+        FROM assigned_tasks
+        WHERE child_id = ?
+        AND status = 'aprovado'
+        AND MONTH(data) = ? AND YEAR(data) = ?
+    `, [childId, m, y]);
+
+    return {
+        periodo: { mes: m, ano: y },
+        financeiro: totals[0], // { total_ganho, total_gasto }
+        tarefaMaisFeita: topTask[0] || null, // { nome, qtd }
+        maiorGasto: topExpense[0] || null, // { motivo, total }
+        totalTarefasConcluidas: taskCount[0].total
+    };
+};

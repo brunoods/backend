@@ -10,3 +10,12 @@ exports.getRankings = asyncHandler(async (req, res) => {
     const rankings = await statsService.getRankings(req.user.id);
     res.json(rankings);
 });
+
+// --- NOVA FUNÇÃO ---
+exports.getMonthlyRecap = asyncHandler(async (req, res) => {
+    const { childId } = req.params;
+    const { month, year } = req.query;
+
+    const recap = await statsService.getMonthlyRecap(childId, month, year);
+    res.json(recap);
+});
