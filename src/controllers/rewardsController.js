@@ -17,6 +17,25 @@ exports.listarRecompensas = asyncHandler(async (req, res) => {
     res.json(recompensas);
 });
 
+// --- NOVA FUNÇÃO DO CONTROLLER ---
+exports.editarRecompensa = asyncHandler(async (req, res) => {
+    const { nome, custo, icone } = req.body;
+    
+    if (!nome || !custo) {
+        const error = new Error('Nome e custo são obrigatórios.');
+        error.statusCode = 400;
+        throw error;
+    }
+
+    await rewardsService.update(req.params.id, req.user.id, { 
+        nome, 
+        custo: parseInt(custo), 
+        icone 
+    });
+    
+    res.json({ mensagem: 'Recompensa atualizada com sucesso!' });
+});
+
 exports.deletarRecompensa = asyncHandler(async (req, res) => {
     await rewardsService.delete(req.params.id, req.user.id);
     res.json({ mensagem: 'Recompensa removida.' });
