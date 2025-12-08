@@ -3,7 +3,8 @@ const db = require('../config/db');
 exports.create = async (parentId, { nome, pontos, frequencia, targetChildId, deadline }) => {
     const [res] = await db.execute(
         'INSERT INTO tasks (parent_id, nome, pontos, frequencia, target_child_id, deadline) VALUES (?, ?, ?, ?, ?, ?)',
-        [parentId, nome, pontos, frequencia, targetChildId || null, deadline || null]
+        // CORREÇÃO: Adicionado '|| null' em frequencia
+        [parentId, nome, pontos, frequencia || null, targetChildId || null, deadline || null]
     );
     return res.insertId;
 };
@@ -26,7 +27,8 @@ exports.list = async (parentId, childId) => {
 exports.update = async (parentId, id, { nome, pontos, frequencia, targetChildId, deadline }) => {
     const [result] = await db.execute(
         'UPDATE tasks SET nome = ?, pontos = ?, frequencia = ?, target_child_id = ?, deadline = ? WHERE id = ? AND parent_id = ?',
-        [nome, pontos, frequencia, targetChildId || null, deadline || null, id, parentId]
+        // CORREÇÃO: Adicionado '|| null' em frequencia
+        [nome, pontos, frequencia || null, targetChildId || null, deadline || null, id, parentId]
     );
     if (result.affectedRows === 0) throw new Error('Tarefa não encontrada ou não autorizada.');
 };

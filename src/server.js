@@ -27,6 +27,9 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Se estiver atrás de um proxy (ex: Heroku, Vercel), habilita o trust proxy
+app.set('trust proxy', 1);
+
 // --- CONFIGURAÇÃO DE SEGURANÇA E PERFORMANCE ---
 
 // 1. Helmet: Protege contra vulnerabilidades web comuns (headers HTTP)
