@@ -11,42 +11,50 @@ exports.create = async (parentId, { nome, pontos, frequencia, targetChildId, dea
 exports.list = async (parentId, childId, apenasConcluidas) => {
     
     // =================================================================================
-    // 1. LÓGICA DE RESET ROBUSTA (Listar IDs -> Resetar por ID)
+    // LÓGICA DE RESET (CICLO DE VIDA DA TAREFA)
+    // Objetivo: Fazer a tarefa voltar a "Pendente" assim que passar da Meia-Noite.
     // =================================================================================
     
     if (childId) {
         try {
-            // A. Busca tarefas DIÁRIAS que precisam de reset
-            // Usa DATE_SUB(..., INTERVAL 3 HOUR) para ajustar o fuso horário do Brasil (UTC-3)
+            // Ajuste de Fuso Horário: -3 Horas (Brasil)
+            // Se o servidor for UTC (00:00), subtraímos 3h para ser 21:00 do dia anterior.
+            // Assim, a "Meia Noite" real só acontece quando o servidor bater 03:00.
+            const FUSO_HORARIO = 'INTERVAL 3 HOUR'; 
+
+            // 1. Resetar Tarefas DIÁRIAS
+            // Lógica: Se a data da conclusão (ajustada) for menor que a data de hoje (ajustada).
+            // Ex: Concluiu dia 08. Hoje é dia 09. 08 < 09? Sim -> Reseta.
             const [dailyResetCandidates] = await db.execute(`
-                SELECT id, nome FROM tasks 
+                SELECT id FROM tasks 
                 WHERE parent_id = ? 
                 AND (target_child_id = ? OR target_child_id IS NULL)
                 AND frequencia = 'diaria' 
                 AND completed = 1 
-                AND DATE(DATE_SUB(data_ultima_conclusao, INTERVAL 3 HOUR)) < DATE(DATE_SUB(NOW(), INTERVAL 3 HOUR))
+                AND DATE(DATE_SUB(data_ultima_conclusao, ${FUSO_HORARIO})) < DATE(DATE_SUB(NOW(), ${FUSO_HORARIO}))
             `, [parentId, childId]);
 
-            // B. Busca tarefas SEMANAIS que precisam de reset
+            // 2. Resetar Tarefas SEMANAIS
+            // Lógica: Se a semana do ano mudou (segunda-feira é o start).
             const [weeklyResetCandidates] = await db.execute(`
-                SELECT id, nome FROM tasks 
+                SELECT id FROM tasks 
                 WHERE parent_id = ? 
                 AND (target_child_id = ? OR target_child_id IS NULL)
                 AND frequencia = 'semanal' 
                 AND completed = 1 
-                AND YEARWEEK(DATE_SUB(data_ultima_conclusao, INTERVAL 3 HOUR), 1) < YEARWEEK(DATE_SUB(NOW(), INTERVAL 3 HOUR), 1)
+                AND YEARWEEK(DATE_SUB(data_ultima_conclusao, ${FUSO_HORARIO}), 1) < YEARWEEK(DATE_SUB(NOW(), ${FUSO_HORARIO}), 1)
             `, [parentId, childId]);
 
-            // C. Executa o Reset se houver candidatos
+            // 3. Executa o Reset (Update em massa)
             const idsToReset = [
                 ...dailyResetCandidates.map(t => t.id),
                 ...weeklyResetCandidates.map(t => t.id)
             ];
 
             if (idsToReset.length > 0) {
-                console.log(`🔄 Resetando tarefas recorrentes (IDs: ${idsToReset.join(', ')})`);
+                console.log(`🌙 Meia-Noite chegou! Resetando tarefas: ${idsToReset.join(', ')}`);
                 
-                // Cria uma string de placeholders (?,?,?)
+                // Truque para criar a string de interrogações (?,?,?)
                 const placeholders = idsToReset.map(() => '?').join(',');
                 
                 await db.execute(
@@ -56,13 +64,12 @@ exports.list = async (parentId, childId, apenasConcluidas) => {
             }
 
         } catch (resetError) {
-            console.error('⚠️ Erro ao tentar resetar tarefas:', resetError.message);
-            // Não paramos o fluxo, apenas logamos o erro e continuamos a listagem
+            console.error('⚠️ Erro no reset automático:', resetError.message);
         }
     }
 
     // =================================================================================
-    // 2. BUSCA DAS TAREFAS
+    // BUSCA DAS TAREFAS (Retorna a lista atualizada)
     // =================================================================================
     
     let query = `
