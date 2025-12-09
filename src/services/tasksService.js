@@ -1,6 +1,7 @@
 const db = require('../config/db');
 
 exports.create = async (parentId, { nome, pontos, frequencia, targetChildId, deadline }) => {
+    // Insere a tarefa com completed = 0 (Pendente) por padrão
     const [res] = await db.execute(
         'INSERT INTO tasks (parent_id, nome, pontos, frequencia, target_child_id, deadline, completed) VALUES (?, ?, ?, ?, ?, ?, 0)',
         [parentId, nome, pontos, frequencia || 'unica', targetChildId || null, deadline || null]
@@ -9,8 +10,10 @@ exports.create = async (parentId, { nome, pontos, frequencia, targetChildId, dea
 };
 
 exports.list = async (parentId, childId, apenasConcluidas) => {
+    // =================================================================================
     // 1. LÓGICA DE RESET AUTOMÁTICO (O "Pulo do Gato")
-    // Antes de listar, verificamos se alguma tarefa recorrente precisa voltar a ser pendente.
+    // Antes de listar, verificamos se o dia/semana virou e resetamos as tarefas recorrentes.
+    // =================================================================================
     
     if (childId) {
         // Resetar DIÁRIAS: Se foi feita antes de hoje
@@ -36,7 +39,10 @@ exports.list = async (parentId, childId, apenasConcluidas) => {
         `, [parentId, childId]);
     }
 
+    // =================================================================================
     // 2. BUSCA DAS TAREFAS
+    // =================================================================================
+    
     let query = `
         SELECT id, parent_id, nome, pontos, frequencia, target_child_id, deadline, completed, data_ultima_conclusao 
         FROM tasks 
@@ -49,14 +55,13 @@ exports.list = async (parentId, childId, apenasConcluidas) => {
         params.push(childId);
     }
 
-    // Se o frontend mandar ?concluida=true, filtramos aqui (opcional)
-    // Mas geralmente o teu front pede tudo e separa nas abas.
+    // Filtro opcional vindo do front (aba Recorrentes vs Pendentes)
     if (apenasConcluidas !== undefined) {
         query += ' AND completed = ?';
         params.push(apenasConcluidas === 'true' ? 1 : 0);
     }
 
-    // Ordenação: Pendentes primeiro, depois por prazo
+    // Ordenação: Pendentes (0) primeiro, depois as Feitas (1), depois por prazo
     query += ' ORDER BY completed ASC, deadline ASC';
 
     const [rows] = await db.execute(query, params);
@@ -64,6 +69,7 @@ exports.list = async (parentId, childId, apenasConcluidas) => {
 };
 
 exports.update = async (parentId, id, { nome, pontos, frequencia, targetChildId, deadline }) => {
+    // Atualiza apenas os dados da tarefa, mantendo o status de 'completed' inalterado
     const [result] = await db.execute(
         'UPDATE tasks SET nome = ?, pontos = ?, frequencia = ?, target_child_id = ?, deadline = ? WHERE id = ? AND parent_id = ?',
         [nome, pontos, frequencia || 'unica', targetChildId || null, deadline || null, id, parentId]

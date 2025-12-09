@@ -9,7 +9,7 @@ exports.criarTarefa = asyncHandler(async (req, res) => {
 });
 
 exports.listarTarefas = asyncHandler(async (req, res) => {
-    // Passamos req.query.concluida para o serviço
+    // Passamos req.query.concluida para o serviço para permitir filtrar nas abas
     const tarefas = await tasksService.list(req.user.id, req.query.childId, req.query.concluida);
     res.json(tarefas);
 });

@@ -10,22 +10,19 @@ exports.completeTask = async (childId, taskId) => {
         if (tasks.length === 0) throw new Error('Tarefa não encontrada.');
         const task = tasks[0];
 
-        // 2. Validação: Se for ÚNICA e já estiver feita, erro.
-        // Se for RECORRENTE e já estiver feita HOJE, o front deve bloquear, mas validamos aqui também.
+        // 2. Validação: Impede concluir se já estiver feita HOJE (segurança extra)
         if (task.completed === 1) {
-            // Pequena proteção para evitar cliques duplos gerando pontos infinitos
-            // Retornamos sucesso sem dar pontos, ou erro, dependendo da tua lógica.
-            // Aqui vou lançar erro para feedback visual.
             throw new Error('Esta tarefa já foi concluída hoje/agora.');
         }
 
-        // 3. Atualiza o status na tabela TASKS (Isso faz ela ir para a aba Recorrentes/Feitas)
+        // 3. ATUALIZAÇÃO CRUCIAL: Marca na tabela TASKS e salva a DATA
+        // Isso permite que o sistema saiba quando resetar a tarefa
         await conn.execute(
             'UPDATE tasks SET completed = 1, data_ultima_conclusao = NOW() WHERE id = ?',
             [taskId]
         );
 
-        // 4. Regista no histórico Assigned Tasks (Para relatórios futuros)
+        // 4. Mantém o registro histórico na tabela auxiliar (opcional, mas bom para relatórios)
         await conn.execute(
             'INSERT INTO assigned_tasks (child_id, task_id, status, data) VALUES (?, ?, ?, NOW())',
             [childId, taskId, 'aprovado']
@@ -37,7 +34,7 @@ exports.completeTask = async (childId, taskId) => {
             [task.pontos, task.pontos, childId]
         );
 
-        // 6. Regista no Extrato Financeiro
+        // 6. Extrato Financeiro
         await conn.execute(
             'INSERT INTO points_history (child_id, pontos, tipo, motivo) VALUES (?, ?, ?, ?)',
             [childId, task.pontos, 'ganho', `Tarefa: ${task.nome}`]
