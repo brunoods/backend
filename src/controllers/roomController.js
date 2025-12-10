@@ -1,6 +1,5 @@
 const roomService = require('../services/roomService');
 const asyncHandler = require('../utils/asyncHandler');
-const api = require('../services/api'); // Para reuso interno se necessário
 
 exports.getRoom = asyncHandler(async (req, res) => {
     const items = await roomService.getRoomItems(req.params.childId);
