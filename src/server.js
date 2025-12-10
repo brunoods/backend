@@ -1,9 +1,9 @@
 const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
-const helmet = require('helmet');           // Segurança
-const compression = require('compression'); // Performance
-const rateLimit = require('express-rate-limit'); // Proteção contra DDoS/Brute-force
+const helmet = require('helmet');
+const compression = require('compression');
+const rateLimit = require('express-rate-limit');
 const db = require('./config/db');
 const errorMiddleware = require('./middleware/errorMiddleware');
 const morgan = require('morgan');
@@ -21,63 +21,48 @@ const savingsRoutes = require('./routes/savingsRoutes');
 const loansRoutes = require('./routes/loansRoutes');
 const subscriptionRoutes = require('./routes/subscriptionRoutes');
 const petsRoutes = require('./routes/petsRoutes');
+
+// --- ROTAS NOVAS (Loja e Quarto) ---
 const shopRoutes = require('./routes/shopRoutes');
 const contentRoutes = require('./routes/contentRoutes');
+const roomRoutes = require('./routes/roomRoutes'); // <--- ADICIONADO AQUI
+// -----------------------------------
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Se estiver atrás de um proxy (ex: Heroku, Vercel), habilita o trust proxy
 app.set('trust proxy', 1);
 
-// --- CONFIGURAÇÃO DE SEGURANÇA E PERFORMANCE ---
-
-// 1. Helmet: Protege contra vulnerabilidades web comuns (headers HTTP)
+// --- SEGURANÇA E PERFORMANCE ---
 app.use(helmet());
-
-// 2. Compression: Comprime as respostas JSON (Gzip) para poupar dados e ser mais rápido
 app.use(compression());
 
-// 3. Rate Limiting: Limita o número de requisições por IP
 const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutos
-    max: 100, // Limite de 100 requisições por IP a cada 15 min
-    message: 'Muitas requisições criadas a partir deste IP, por favor tente novamente mais tarde.',
+    windowMs: 15 * 60 * 1000,
+    max: 100,
+    message: 'Muitas requisições, tente novamente mais tarde.',
     standardHeaders: true,
     legacyHeaders: false,
 });
 app.use(limiter);
 
-// 4. Rate Limit Específico para Login (Mais rigoroso)
 const loginLimiter = rateLimit({
-    windowMs: 60 * 60 * 1000, // 1 hora
-    max: 10, // Bloqueia após 10 tentativas
+    windowMs: 60 * 60 * 1000,
+    max: 10,
     message: 'Muitas tentativas de login. Tente novamente em 1 hora.'
 });
 app.use('/auth/login', loginLimiter);
 
-// 5. Logger de Requisições HTTP (Desenvolvimento)
 app.use(morgan('dev'));
 
 // --- MIDDLEWARES PADRÃO ---
-// Em vez de app.use(cors());
-app.use(cors({
-    origin: '*', // Em produção, troca '*' pelo domínio do teu site se tiveres
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
-    allowedHeaders: ['Content-Type', 'Authorization']
-}));
+app.use(cors({ origin: '*', methods: ['GET', 'POST', 'PUT', 'DELETE'], allowedHeaders: ['Content-Type', 'Authorization'] }));
 app.use(express.json());
 
-// Rota de teste (Health Check)
 app.get('/', (req, res) => {
-    res.json({
-        mensagem: 'API do Sistema de Mesada está online! 🚀',
-        status: 200,
-        uptime: process.uptime(),
-        timestamp: new Date()
-    });
+    res.json({ mensagem: 'API do Sistema de Mesada está online! 🚀', status: 200, uptime: process.uptime() });
 });
 
 // --- DEFINIÇÃO DAS ROTAS ---
@@ -93,32 +78,28 @@ app.use('/savings', savingsRoutes);
 app.use('/loans', loansRoutes);
 app.use('/subscribe', subscriptionRoutes);
 app.use('/pets', petsRoutes);
+
+// --- ROTAS NOVAS REGISTADAS ---
 app.use('/shop', shopRoutes);
 app.use('/content', contentRoutes);
+app.use('/room', roomRoutes); // <--- A LINHA QUE FALTAVA PARA CORRIGIR O 404
+// ------------------------------
 
-// --- TRATAMENTO DE ERROS CENTRALIZADO ---
-// Deve ser sempre o último middleware antes do listen
 app.use(errorMiddleware);
 
-// --- INICIALIZAÇÃO DO SERVIDOR ---
 const server = app.listen(PORT, () => {
     console.log(`🚀 Servidor BLINDADO rodando na porta ${PORT}`);
 });
 
-// --- GRACEFUL SHUTDOWN (Desligamento Gracioso) ---
-// Garante que o banco fecha corretamente se o servidor reiniciar
 const gracefulShutdown = () => {
-    console.log('🛑 Recebido sinal de encerramento. Fechando servidor...');
-    
+    console.log('🛑 Fechando servidor...');
     server.close(async () => {
-        console.log('🔌 Servidor HTTP fechado.');
-        
         try {
-            await db.end(); // Fecha conexão com MySQL
-            console.log('💾 Conexão com Banco de Dados encerrada com sucesso.');
+            await db.end();
+            console.log('💾 Banco de Dados desconectado.');
             process.exit(0);
         } catch (err) {
-            console.error('❌ Erro ao fechar banco de dados:', err);
+            console.error('❌ Erro ao fechar banco:', err);
             process.exit(1);
         }
     });
