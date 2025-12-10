@@ -21,6 +21,8 @@ const savingsRoutes = require('./routes/savingsRoutes');
 const loansRoutes = require('./routes/loansRoutes');
 const subscriptionRoutes = require('./routes/subscriptionRoutes');
 const petsRoutes = require('./routes/petsRoutes');
+const shopRoutes = require('./routes/shopRoutes');
+const contentRoutes = require('./routes/contentRoutes');
 
 dotenv.config();
 
@@ -91,6 +93,8 @@ app.use('/savings', savingsRoutes);
 app.use('/loans', loansRoutes);
 app.use('/subscribe', subscriptionRoutes);
 app.use('/pets', petsRoutes);
+app.use('/shop', shopRoutes);
+app.use('/content', contentRoutes);
 
 // --- TRATAMENTO DE ERROS CENTRALIZADO ---
 // Deve ser sempre o último middleware antes do listen
