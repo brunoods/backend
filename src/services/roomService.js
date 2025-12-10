@@ -44,3 +44,36 @@ exports.addFurnitureToInventory = async (childId, itemKey) => {
         [childId, itemKey]
     );
 };
+
+exports.buyFurniture = async (childId, itemKey, price) => {
+    const connection = await db.getConnection();
+    try {
+        await connection.beginTransaction();
+
+        // 1. Verificar Saldo
+        const [child] = await connection.execute('SELECT pontos FROM children WHERE id = ?', [childId]);
+        if (child[0].pontos < price) throw new Error('Saldo insuficiente.');
+
+        // 2. Debitar Pontos
+        await connection.execute('UPDATE children SET pontos = pontos - ? WHERE id = ?', [price, childId]);
+
+        // 3. Adicionar ao Inventário
+        await connection.execute(
+            'INSERT INTO child_inventory (child_id, item_key, is_placed) VALUES (?, ?, 0)',
+            [childId, itemKey]
+        );
+
+        // 4. Histórico Financeiro
+        await connection.execute(
+            'INSERT INTO points_history (child_id, pontos, tipo, motivo) VALUES (?, ?, ?, ?)',
+            [childId, -price, 'perda', `Comprou Mobília`]
+        );
+
+        await connection.commit();
+    } catch (error) {
+        await connection.rollback();
+        throw error;
+    } finally {
+        connection.release();
+    }
+};

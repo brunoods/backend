@@ -23,3 +23,9 @@ exports.removeFromRoom = asyncHandler(async (req, res) => {
     await roomService.removeItem(inventoryId);
     res.json({ success: true });
 });
+
+exports.buyItem = asyncHandler(async (req, res) => {
+    const { childId, itemKey, price } = req.body;
+    await roomService.buyFurniture(childId, itemKey, price);
+    res.json({ success: true });
+});
