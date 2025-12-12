@@ -18,13 +18,22 @@ router.get('/punishments', asyncHandler(async (req, res) => {
     res.json(rows);
 }));
 
-// Rota Temas
+// Rota Temas (ATUALIZADA)
 router.get('/themes', asyncHandler(async (req, res) => {
     const [rows] = await db.execute('SELECT * FROM room_themes WHERE is_active = 1');
+    
     const themes = rows.map(t => ({
-        ...t,
-        widgets: typeof t.widgets === 'string' ? JSON.parse(t.widgets) : t.widgets
+        id: t.item_key, // O frontend espera 'id' como string (ex: 'space')
+        name: t.name,
+        price: t.price,
+        colors: typeof t.colors === 'string' ? JSON.parse(t.colors) : t.colors,
+        text: t.text_color,
+        emoji: typeof t.emojis === 'string' ? JSON.parse(t.emojis) : t.emojis,
+        accent: t.accent_color,
+        description: t.description,
+        item_key: t.item_key // Manter compatibilidade
     }));
+    
     res.json(themes);
 }));
 
@@ -38,4 +47,4 @@ router.get('/config', asyncHandler(async (req, res) => {
     res.json(configMap);
 }));
 
-module.exports = router; // <--- O erro acontece se isto faltar!
+module.exports = router;
