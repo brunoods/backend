@@ -6,35 +6,49 @@ exports.completeTask = async (childId, taskId) => {
         await conn.beginTransaction();
 
         // 1. Busca a tarefa
-        const [tasks] = await conn.execute('SELECT nome, pontos, completed, frequencia FROM tasks WHERE id = ?', [taskId]);
+        const [tasks] = await conn.execute('SELECT id, nome, pontos, completed, frequencia FROM tasks WHERE id = ?', [taskId]);
         if (tasks.length === 0) throw new Error('Tarefa não encontrada.');
         const task = tasks[0];
 
         // 2. Validação: Impede concluir se já estiver feita HOJE (segurança extra)
+        // Nota: Se for não-recorrente, ela vai ser deletada, então essa validação serve mais para as recorrentes.
         if (task.completed === 1) {
             throw new Error('Esta tarefa já foi concluída hoje/agora.');
         }
 
-        // 3. ATUALIZAÇÃO CRUCIAL: Marca na tabela TASKS e salva a DATA
-        // Isso permite que o sistema saiba quando resetar a tarefa
-        await conn.execute(
-            'UPDATE tasks SET completed = 1, data_ultima_conclusao = NOW() WHERE id = ?',
-            [taskId]
-        );
+        // 3. Lógica de Conclusão Baseada na Frequência
+        const isRecurring = ['diaria', 'semanal'].includes(task.frequencia);
 
-        // 4. Mantém o registro histórico na tabela auxiliar (opcional, mas bom para relatórios)
-        await conn.execute(
-            'INSERT INTO assigned_tasks (child_id, task_id, status, data) VALUES (?, ?, ?, NOW())',
-            [childId, taskId, 'aprovado']
-        );
+        if (isRecurring) {
+            // --- TAREFA RECORRENTE ---
+            // Marca como concluída (vai para a aba "Feitas" e reseta depois)
+            await conn.execute(
+                'UPDATE tasks SET completed = 1, data_ultima_conclusao = NOW() WHERE id = ?',
+                [taskId]
+            );
 
-        // 5. Dá os pontos à criança
+            // Mantém o registro histórico na tabela auxiliar para estatísticas
+            await conn.execute(
+                'INSERT INTO assigned_tasks (child_id, task_id, status, data) VALUES (?, ?, ?, NOW())',
+                [childId, taskId, 'aprovado']
+            );
+
+        } else {
+            // --- TAREFA ÚNICA / NÃO RECORRENTE ---
+            // Remove a tarefa do banco de dados permanentemente
+            await conn.execute('DELETE FROM tasks WHERE id = ?', [taskId]);
+            
+            // Nota: Não inserimos em 'assigned_tasks' aqui para evitar erro de chave estrangeira,
+            // já que a tarefa pai acabou de ser deletada.
+        }
+
+        // 4. Dá os pontos à criança (Comum para ambos os casos)
         await conn.execute(
             'UPDATE children SET pontos = pontos + ?, xp = xp + ? WHERE id = ?',
             [task.pontos, task.pontos, childId]
         );
 
-        // 6. Extrato Financeiro
+        // 5. Extrato Financeiro (Sempre registra, pois guarda o NOME da tarefa e não o ID)
         await conn.execute(
             'INSERT INTO points_history (child_id, pontos, tipo, motivo) VALUES (?, ?, ?, ?)',
             [childId, task.pontos, 'ganho', `Tarefa: ${task.nome}`]
