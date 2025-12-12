@@ -11,5 +11,6 @@ router.put('/:id', savingsController.updateGoal);
 router.delete('/:id', savingsController.deleteGoal);
 router.post('/move', savingsController.moveBalance);
 router.post('/interest', savingsController.applyInterest);
+router.post('/:id/transaction', savingsController.transaction);
 
 module.exports = router;
