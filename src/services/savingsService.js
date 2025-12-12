@@ -106,3 +106,65 @@ exports.applyInterest = async (goalId, percentual) => {
         connection.release();
     }
 };
+
+// Adiciona ao final de src/services/savingsService.js
+
+exports.handleTransaction = async (goalId, childId, tipo, valor) => {
+    const connection = await db.getConnection();
+    try {
+        await connection.beginTransaction();
+
+        // 1. Buscar dados do Cofre e da Criança
+        const [goals] = await connection.execute('SELECT titulo, saldo_guardado FROM savings_goals WHERE id = ?', [goalId]);
+        if (goals.length === 0) throw new Error('Cofre não encontrado.');
+        const goal = goals[0];
+
+        const [children] = await connection.execute('SELECT pontos FROM children WHERE id = ?', [childId]);
+        if (children.length === 0) throw new Error('Criança não encontrada.');
+        const saldoCarteira = children[0].pontos;
+
+        // 2. Executar Lógica
+        if (tipo === 'deposit') {
+            // GUARDAR
+            if (saldoCarteira < valor) throw new Error('Saldo insuficiente na carteira.');
+            
+            await connection.execute('UPDATE children SET pontos = pontos - ? WHERE id = ?', [valor, childId]);
+            await connection.execute('UPDATE savings_goals SET saldo_guardado = saldo_guardado + ? WHERE id = ?', [valor, goalId]);
+            
+            await connection.execute(
+                'INSERT INTO points_history (child_id, pontos, tipo, motivo) VALUES (?, ?, ?, ?)',
+                [childId, -valor, 'perda', `Guardou no cofre: ${goal.titulo}`]
+            );
+
+        } else if (tipo === 'withdraw') {
+            // RESGATAR
+            if (goal.saldo_guardado < valor) throw new Error('Saldo insuficiente no cofre.');
+
+            await connection.execute('UPDATE savings_goals SET saldo_guardado = saldo_guardado - ? WHERE id = ?', [valor, goalId]);
+            await connection.execute('UPDATE children SET pontos = pontos + ? WHERE id = ?', [valor, childId]);
+
+            await connection.execute(
+                'INSERT INTO points_history (child_id, pontos, tipo, motivo) VALUES (?, ?, ?, ?)',
+                [childId, valor, 'ganho', `Resgatou do cofre: ${goal.titulo}`]
+            );
+        } 
+        else if (tipo === 'interest') {
+             // JUROS (Bónus)
+             await connection.execute('UPDATE savings_goals SET saldo_guardado = saldo_guardado + ? WHERE id = ?', [valor, goalId]);
+        }
+
+        await connection.commit();
+        
+        // Retornar os novos saldos para atualizar a UI
+        return { 
+            novoSaldoCofre: (tipo === 'deposit' ? goal.saldo_guardado + valor : (tipo === 'withdraw' ? goal.saldo_guardado - valor : goal.saldo_guardado + valor)),
+            novoSaldoCarteira: (tipo === 'deposit' ? saldoCarteira - valor : (tipo === 'withdraw' ? saldoCarteira + valor : saldoCarteira))
+        };
+
+    } catch (error) {
+        await connection.rollback();
+        throw error;
+    } finally {
+        connection.release();
+    }
+};
