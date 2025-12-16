@@ -2,8 +2,7 @@ const db = require('../config/db');
 const { google } = require('googleapis');
 const path = require('path');
 
-// Caminho para o arquivo JSON baixado do Google Cloud
-// Certifique-se de colocar o arquivo 'service-account.json' na raiz do projeto backend
+// Certifique-se que este ficheiro existe e tem permissões na Google Play Console
 const KEY_FILE_PATH = path.join(__dirname, '../../service-account.json');
 
 exports.verify = async (userId, { purchaseToken, productId, packageName }) => {
@@ -11,9 +10,9 @@ exports.verify = async (userId, { purchaseToken, productId, packageName }) => {
     try {
         await connection.beginTransaction();
         
-        console.log(`🔍 Verificando assinatura: ${productId} para o pacote: ${packageName}`);
+        console.log(`🔍 Validando Google: ${productId} | User: ${userId}`);
 
-        // 1. Autenticação com o Google
+        // 1. Autenticação
         const auth = new google.auth.GoogleAuth({
             keyFile: KEY_FILE_PATH,
             scopes: ['https://www.googleapis.com/auth/androidpublisher']
@@ -21,67 +20,52 @@ exports.verify = async (userId, { purchaseToken, productId, packageName }) => {
 
         const authClient = await auth.getClient();
         
-        // 2. Cliente da API Android Publisher
+        // 2. Cliente API
         const androidPublisher = google.androidpublisher({
             version: 'v3',
             auth: authClient
         });
 
-        // 3. Consultar o Google para validar o token
-        // Use 'purchases.subscriptions.get' para assinaturas (mensal/anual)
-        // Use 'purchases.products.get' se fossem itens únicos (moedas, vidas)
+        // 3. Consulta ao Google
+        // productId aqui deve ser o ID do Produto Pai ('mesadinhapremium') ou o ID antigo
         const response = await androidPublisher.purchases.subscriptions.get({
             packageName: packageName,
-            subscriptionId: productId,
+            subscriptionId: productId, 
             token: purchaseToken
         });
 
         const purchaseData = response.data;
-        
-        console.log('📊 Resposta do Google:', purchaseData);
+        console.log('📊 Google Status:', purchaseData.paymentState, '| Expira:', purchaseData.expiryTimeMillis);
 
-        // --- LÓGICA DE VALIDAÇÃO REAL ---
-        
-        // expiryTimeMillis: Data de expiração da assinatura
-        // paymentState: 
-        // 1 = Pagamento recebido
-        // 2 = Teste gratuito (Trial)
-        // 0 = Pendente (Ainda não cobrou)
-        
+        // 4. Lógica de Validação
+        // paymentState: 1 (Recebido), 2 (Trial)
         const now = Date.now();
         const expiryTime = parseInt(purchaseData.expiryTimeMillis);
         
-        // É válido se: (Pago OU Trial) E (Data de Expiração > Agora)
+        // Nota: O Google dá um tempo de carência (grace period), podes querer aceitar isso também
         const isPaymentValid = (purchaseData.paymentState === 1 || purchaseData.paymentState === 2);
         const isNotExpired = expiryTime > now;
 
         if (isPaymentValid && isNotExpired) {
-            console.log('✅ Assinatura VÁLIDA!');
-            
             const dataValidade = new Date(expiryTime);
 
-            // Atualiza o usuário para PRO e define a data real de fim
+            // Atualiza User
             await connection.execute(
                 'UPDATE users SET is_pro = 1, subscription_end_date = ? WHERE id = ?',
                 [dataValidade, userId]
             );
 
-            // (Opcional) Logar a transação
-            // await connection.execute('INSERT INTO transactions ...');
-
             await connection.commit();
             return true;
         } else {
-            console.warn('❌ Assinatura inválida, pendente ou expirada.');
-            throw new Error('Assinatura inválida ou expirada.');
+            throw new Error('Assinatura expirada ou pagamento pendente.');
         }
 
     } catch (error) {
         await connection.rollback();
-        console.error('❌ Erro na verificação Google:', error.message);
-        
-        // Dica: Se der erro "invalid_grant", verifique o relógio do servidor ou o arquivo JSON
-        throw new Error('Falha ao validar compra com o Google. Tente novamente.');
+        // Erro comum: "Subscription not found" se o productId estiver errado
+        console.error('❌ Erro Service:', error.message);
+        throw error; // Lança para o controller pegar
     } finally {
         connection.release();
     }
