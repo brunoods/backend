@@ -1,10 +1,11 @@
 const db = require('../config/db');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { OAuth2Client } = require('google-auth-library');
 
-// Configura o cliente do Google com o ID do ambiente (Best Practice)
-const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+// Nota: O 'fetch' é nativo no Node.js 18+. 
+// Se estiveres a usar uma versão antiga (ex: Node 16 ou inferior), precisas de instalar: npm install node-fetch
+// e descomentar a linha abaixo:
+// const fetch = require('node-fetch'); 
 
 exports.registerUser = async ({ nome, email, senha }) => {
     const [existing] = await db.execute('SELECT id FROM users WHERE email = ?', [email]);
@@ -46,12 +47,13 @@ exports.authenticateUser = async ({ email, senha }) => {
     };
 };
 
-exports.loginWithGoogle = async (googleToken) => {
+// --- LOGIN COM GOOGLE (VERSÃO ACCESS TOKEN) ---
+exports.loginWithGoogle = async (accessToken) => {
     try {
-        // 🔄 MUDANÇA: Validar Access Token em vez de ID Token
-        // Vamos perguntar diretamente ao Google quem é o dono deste token
+        // 1. Validar o Access Token diretamente com a API do Google
+        // Isto garante que o token é real e obtém os dados do utilizador
         const googleResponse = await fetch(`https://www.googleapis.com/oauth2/v3/userinfo`, {
-            headers: { Authorization: `Bearer ${googleToken}` }
+            headers: { Authorization: `Bearer ${accessToken}` }
         });
 
         if (!googleResponse.ok) {
@@ -60,28 +62,32 @@ exports.loginWithGoogle = async (googleToken) => {
 
         const payload = await googleResponse.json();
         
-        // O formato de resposta é muito semelhante ao anterior
+        // Extrair dados do perfil Google
         const { email, name, sub: googleId, picture } = payload; 
 
-        // --- A PARTIR DAQUI É TUDO IGUAL ---
-        
-        // 2. Verificar base de dados
+        // 2. Verificar se o utilizador já existe na Base de Dados
         const [users] = await db.execute('SELECT * FROM users WHERE email = ?', [email]);
         
         let user;
 
         if (users.length > 0) {
-            // Cenário A: Usuário já existe
+            // --- CENÁRIO A: Usuário já existe ---
             user = users[0];
+            
+            // (Opcional) Se quiseres atualizar a foto sempre que ele loga, descomenta isto:
+            // await db.execute('UPDATE users SET avatar = ? WHERE id = ?', [picture, user.id]);
         } else {
-            // Cenário B: Usuário Novo
+            // --- CENÁRIO B: Usuário Novo (Auto-Cadastro) ---
+            // Geramos uma senha aleatória complexa
             const randomPassword = Math.random().toString(36).slice(-8) + Date.now().toString();
             const salt = await bcrypt.genSalt(10);
             const senhaHash = await bcrypt.hash(randomPassword, salt);
 
+            // Inserimos na base de dados (Mantive a estrutura original da tua tabela)
+            // Se já tiveres a coluna 'avatar' na tabela users, podes adicioná-la aqui no INSERT
             const [result] = await db.execute(
-                'INSERT INTO users (nome, email, senha_hash, avatar, is_pro) VALUES (?, ?, ?, ?, 0)',
-                [name, email, senhaHash, picture || null]
+                'INSERT INTO users (nome, email, senha_hash) VALUES (?, ?, ?)',
+                [name, email, senhaHash]
             );
             
             user = { 
@@ -89,12 +95,11 @@ exports.loginWithGoogle = async (googleToken) => {
                 nome: name, 
                 email: email, 
                 admin_id: null, 
-                is_pro: 0,
-                avatar: picture 
+                is_pro: 0
             };
         }
 
-        // 3. Gerar Token JWT da Mesadinha
+        // 3. Gerar Token JWT da Aplicação
         const effectiveId = user.admin_id ? user.admin_id : user.id;
         const token = jwt.sign(
             { id: effectiveId, nome: user.nome, real_id: user.id },
@@ -108,7 +113,8 @@ exports.loginWithGoogle = async (googleToken) => {
                 id: effectiveId,
                 nome: user.nome,
                 email: user.email,
-                avatar: user.avatar || picture,
+                // Usamos a foto do Google se o utilizador não tiver uma na BD
+                avatar: user.avatar || picture, 
                 is_pro: !!user.is_pro || !!user.admin_id 
             }
         };
