@@ -46,36 +46,42 @@ exports.authenticateUser = async ({ email, senha }) => {
     };
 };
 
-// --- LOGIN COM GOOGLE (VERSÃO BLINDADA 🛡️) ---
 exports.loginWithGoogle = async (googleToken) => {
     try {
-        // 1. Validação de Segurança do Google
-        const ticket = await googleClient.verifyIdToken({
-            idToken: googleToken,
-            audience: process.env.GOOGLE_CLIENT_ID // Bloqueia tokens gerados para outros apps
+        // 🔄 MUDANÇA: Validar Access Token em vez de ID Token
+        // Vamos perguntar diretamente ao Google quem é o dono deste token
+        const googleResponse = await fetch(`https://www.googleapis.com/oauth2/v3/userinfo`, {
+            headers: { Authorization: `Bearer ${googleToken}` }
         });
-        
-        const payload = ticket.getPayload();
-        // Extraímos dados seguros (picture é a foto do perfil Google)
-        const { email, name, picture } = payload; 
 
+        if (!googleResponse.ok) {
+            throw new Error('Token do Google inválido ou expirado.');
+        }
+
+        const payload = await googleResponse.json();
+        
+        // O formato de resposta é muito semelhante ao anterior
+        const { email, name, sub: googleId, picture } = payload; 
+
+        // --- A PARTIR DAQUI É TUDO IGUAL ---
+        
         // 2. Verificar base de dados
         const [users] = await db.execute('SELECT * FROM users WHERE email = ?', [email]);
         
         let user;
 
         if (users.length > 0) {
-            // --- CENÁRIO A: Usuário já existe ---
+            // Cenário A: Usuário já existe
             user = users[0];
         } else {
-            // --- CENÁRIO B: Usuário Novo (Auto-Cadastro) ---
+            // Cenário B: Usuário Novo
             const randomPassword = Math.random().toString(36).slice(-8) + Date.now().toString();
             const salt = await bcrypt.genSalt(10);
             const senhaHash = await bcrypt.hash(randomPassword, salt);
 
             const [result] = await db.execute(
-                'INSERT INTO users (nome, email, senha_hash) VALUES (?, ?, ?)',
-                [name, email, senhaHash]
+                'INSERT INTO users (nome, email, senha_hash, avatar, is_pro) VALUES (?, ?, ?, ?, 0)',
+                [name, email, senhaHash, picture || null]
             );
             
             user = { 
@@ -84,12 +90,11 @@ exports.loginWithGoogle = async (googleToken) => {
                 email: email, 
                 admin_id: null, 
                 is_pro: 0,
-                // Se quiseres salvar a foto no futuro, adiciona a coluna 'avatar' na tabela users
                 avatar: picture 
             };
         }
 
-        // 3. Gerar Token JWT
+        // 3. Gerar Token JWT da Mesadinha
         const effectiveId = user.admin_id ? user.admin_id : user.id;
         const token = jwt.sign(
             { id: effectiveId, nome: user.nome, real_id: user.id },
@@ -103,15 +108,14 @@ exports.loginWithGoogle = async (googleToken) => {
                 id: effectiveId,
                 nome: user.nome,
                 email: user.email,
-                // Envia a foto do Google para o app usar, mesmo que não esteja salva no banco
-                avatar: user.avatar || picture, 
+                avatar: user.avatar || picture,
                 is_pro: !!user.is_pro || !!user.admin_id 
             }
         };
 
     } catch (error) {
         console.error('Erro Auth Google:', error.message);
-        throw new Error('Falha na autenticação com Google. Tente novamente.');
+        throw new Error('Falha na autenticação com Google.');
     }
 };
 
