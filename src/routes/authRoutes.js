@@ -16,4 +16,6 @@ router.post('/link-response', authMiddleware, authController.responderVinculo);
 router.put('/profile', authMiddleware, authController.editarPerfil);
 router.put('/password', authMiddleware, authController.alterarSenha);
 
+router.post('/google', authController.loginGoogle);
+
 module.exports = router;

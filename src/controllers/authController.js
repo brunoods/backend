@@ -55,3 +55,19 @@ exports.alterarSenha = asyncHandler(async (req, res) => {
     await authService.changePassword(userId, data);
     res.json({ mensagem: 'Senha alterada com sucesso!' });
 });
+
+// --- ADICIONA ESTA FUNÇÃO ---
+exports.loginGoogle = asyncHandler(async (req, res) => {
+    const { token } = req.body;
+    
+    if (!token) {
+        const error = new Error('Token do Google é obrigatório.');
+        error.statusCode = 400;
+        throw error;
+    }
+
+    // Chama o serviço (que vamos criar no próximo passo)
+    const result = await authService.loginWithGoogle(token);
+    
+    res.json({ mensagem: 'Login com Google realizado com sucesso!', ...result });
+});

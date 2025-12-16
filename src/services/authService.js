@@ -1,6 +1,12 @@
 const db = require('../config/db');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const { OAuth2Client } = require('google-auth-library'); // Importa a lib do Google
+
+// Configura o cliente do Google
+// Nota: O Client ID aqui é opcional no construtor se só formos validar o token,
+// mas é boa prática ter o GOOGLE_CLIENT_ID no .env para segurança extra (validar audience).
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 exports.registerUser = async ({ nome, email, senha }) => {
     const [existing] = await db.execute('SELECT id FROM users WHERE email = ?', [email]);
@@ -42,15 +48,75 @@ exports.authenticateUser = async ({ email, senha }) => {
     };
 };
 
+// --- NOVA FUNÇÃO: LOGIN COM GOOGLE ---
+exports.loginWithGoogle = async (googleToken) => {
+    // 1. Validar o token recebido do Android
+    const ticket = await googleClient.verifyIdToken({
+        idToken: googleToken,
+        audience: process.env.GOOGLE_CLIENT_ID // Valida se o token foi gerado para o teu app
+    });
+    
+    const payload = ticket.getPayload();
+    const { email, name, sub: googleId } = payload; // 'sub' é o ID único do Google
+
+    // 2. Verificar se o usuário já existe no banco
+    const [users] = await db.execute('SELECT * FROM users WHERE email = ?', [email]);
+    
+    let user;
+
+    if (users.length > 0) {
+        // --- CENÁRIO A: Usuário já existe ---
+        user = users[0];
+    } else {
+        // --- CENÁRIO B: Usuário Novo (Auto-Cadastro) ---
+        // Geramos uma senha aleatória complexa, já que ele usa Google para entrar
+        const randomPassword = Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-8);
+        const salt = await bcrypt.genSalt(10);
+        const senhaHash = await bcrypt.hash(randomPassword, salt);
+
+        // Insere o novo usuário
+        const [result] = await db.execute(
+            'INSERT INTO users (nome, email, senha_hash) VALUES (?, ?, ?)',
+            [name, email, senhaHash]
+        );
+        
+        // Reconstrói o objeto usuário para gerar o token
+        user = { 
+            id: result.insertId, 
+            nome: name, 
+            email: email, 
+            admin_id: null, 
+            is_pro: 0 
+        };
+    }
+
+    // 3. Gerar o Token JWT (Lógica idêntica ao login normal)
+    const effectiveId = user.admin_id ? user.admin_id : user.id;
+    const token = jwt.sign(
+        { id: effectiveId, nome: user.nome, real_id: user.id },
+        process.env.JWT_SECRET,
+        { expiresIn: '30d' }
+    );
+
+    return {
+        token,
+        usuario: {
+            id: effectiveId,
+            nome: user.nome,
+            email: user.email,
+            is_pro: !!user.is_pro || !!user.admin_id 
+        }
+    };
+};
+// -------------------------------------
+
 exports.requestLink = async (requesterId, emailAdmin) => {
-    // Achar o pai pelo email
     const [admins] = await db.execute('SELECT id, nome FROM users WHERE email = ?', [emailAdmin]);
     if (admins.length === 0) throw new Error('E-mail não encontrado.');
 
     const adminId = admins[0].id;
     if (adminId === requesterId) throw new Error('Você não pode vincular a si mesmo.');
 
-    // Verificar se já existe pedido
     const [pedidos] = await db.execute(
         'SELECT id FROM family_requests WHERE requester_id = ? AND admin_id = ?',
         [requesterId, adminId]
@@ -76,23 +142,19 @@ exports.listRequests = async (adminId) => {
 };
 
 exports.respondLink = async (adminId, { requestId, acao }) => {
-    // Buscar o pedido para garantir que pertence a este admin
     const [pedidos] = await db.execute('SELECT * FROM family_requests WHERE id = ? AND admin_id = ?', [requestId, adminId]);
     if (pedidos.length === 0) throw new Error('Solicitação não encontrada ou não autorizada.');
 
     const pedido = pedidos[0];
 
     if (acao === 'aprovar') {
-        // Efetiva o vínculo
         await db.execute('UPDATE users SET admin_id = ? WHERE id = ?', [adminId, pedido.requester_id]);
     }
 
-    // Limpa o pedido
     await db.execute('DELETE FROM family_requests WHERE id = ?', [requestId]);
 };
 
 exports.updateProfile = async (userId, { nome, email }) => {
-    // Verifica se o email já está em uso por outra pessoa
     const [users] = await db.execute(
         'SELECT id FROM users WHERE email = ? AND id != ?',
         [email, userId]
