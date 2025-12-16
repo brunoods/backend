@@ -5,6 +5,10 @@ const path = require('path');
 // Certifique-se que este ficheiro existe e tem permissões na Google Play Console
 const KEY_FILE_PATH = path.join(__dirname, '../../service-account.json');
 
+const SERVICE_ACCOUNT_PATH = process.env.NODE_ENV === 'production' 
+    ? '/etc/secrets/service-account.json'
+    : path.join(__dirname, '../service-account.json');
+
 exports.verify = async (userId, { purchaseToken, productId, packageName }) => {
     const connection = await db.getConnection();
     try {
