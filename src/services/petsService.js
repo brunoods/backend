@@ -1,20 +1,15 @@
 const db = require('../config/db');
 
-// Catálogo Hardcoded para validação de preço
-const PET_CATALOG = {
-    'dog': { price: 250, name: 'Cachorrinho' }, // Era 200
-    'cat': { price: 250, name: 'Gatinho' },     // Era 200
-    'hamster': { price: 150, name: 'Hamster' },
-    'lion': { price: 500, name: 'Leão' },
-    'robot': { price: 300, name: 'Robô-Pet' },
-    'dino': { price: 400, name: 'Dinossauro' }
-};
+// REMOVIDO: const PET_CATALOG = { ... }
 
 exports.listOwned = async (childId) => {
-    const [rows] = await db.execute(
-        'SELECT pet_code, is_equipped FROM child_pets WHERE child_id = ?', 
-        [childId]
-    );
+    // Agora fazemos um JOIN para trazer os detalhes do pet (nome, preço) direto da tabela nova
+    const [rows] = await db.execute(`
+        SELECT cp.pet_code, cp.is_equipped, pc.name 
+        FROM child_pets cp
+        JOIN pet_catalog pc ON cp.pet_code = pc.pet_code
+        WHERE cp.child_id = ?
+    `, [childId]);
     return rows;
 };
 
@@ -22,19 +17,28 @@ exports.buy = async (childId, petCode) => {
     const connection = await db.getConnection();
     try {
         await connection.beginTransaction();
-        const petInfo = PET_CATALOG[petCode];
 
-        if (!petInfo) throw new Error('Pet inválido.');
+        // 1. Buscar info do Pet na base de dados
+        const [pets] = await connection.execute(
+            'SELECT * FROM pet_catalog WHERE pet_code = ? AND is_active = 1', 
+            [petCode]
+        );
+        
+        if (pets.length === 0) throw new Error('Pet inválido ou indisponível.');
+        const petInfo = pets[0];
 
+        // 2. Verifica se já tem
         const [existing] = await connection.execute(
             'SELECT id FROM child_pets WHERE child_id = ? AND pet_code = ?',
             [childId, petCode]
         );
         if (existing.length > 0) throw new Error('Você já tem este mascote!');
 
+        // 3. Verifica saldo
         const [child] = await connection.execute('SELECT pontos FROM children WHERE id = ?', [childId]);
         if (child[0].pontos < petInfo.price) throw new Error(`Saldo insuficiente. Custa ${petInfo.price} pts.`);
 
+        // 4. Efetua a compra
         await connection.execute('UPDATE children SET pontos = pontos - ? WHERE id = ?', [petInfo.price, childId]);
         await connection.execute('INSERT INTO child_pets (child_id, pet_code) VALUES (?, ?)', [childId, petCode]);
         await connection.execute('INSERT INTO points_history (child_id, pontos, tipo, motivo) VALUES (?, ?, ?, ?)', [childId, -petInfo.price, 'perda', `Comprou Pet: ${petInfo.name}`]);

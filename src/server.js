@@ -21,6 +21,7 @@ const savingsRoutes = require('./routes/savingsRoutes');
 const loansRoutes = require('./routes/loansRoutes');
 const subscriptionRoutes = require('./routes/subscriptionRoutes');
 const petsRoutes = require('./routes/petsRoutes');
+const startCron = require('./cron/dailyReset');
 
 // --- ROTAS NOVAS (Loja e Quarto) ---
 const shopRoutes = require('./routes/shopRoutes');
@@ -89,6 +90,7 @@ app.use(errorMiddleware);
 
 const server = app.listen(PORT, () => {
     console.log(`🚀 Servidor BLINDADO rodando na porta ${PORT}`);
+    startCron(); // <--- ATIVAR AQUI
 });
 
 const gracefulShutdown = () => {
@@ -104,6 +106,7 @@ const gracefulShutdown = () => {
         }
     });
 };
+
 
 process.on('SIGTERM', gracefulShutdown);
 process.on('SIGINT', gracefulShutdown);
